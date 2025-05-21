@@ -293,3 +293,49 @@ async function run() {
         if (!isMatch) {
           return res.status(400).send("Invalid credentials");
         }
+
+          // Create JWT token
+          const token = jwt.sign(
+            { id: user._id, email: user.email },
+            JWT_SECRET,
+            { expiresIn: "1h" }
+          );
+  
+          res.json({ token, user });
+        } catch (err) {
+          res.status(500).send("Server error");
+        }
+      });
+  
+      app.post("/api/save-user", async (req, res) => {
+        const { name, email, photoURL } = req.body;
+  
+        try {
+          let user = await users.findOne({ email });
+  
+          if (!user) {
+            const result = await users.insertOne({
+              name,
+              email,
+              photoURL: photoURL || "",
+              createdAt: new Date(),
+            });
+            user = await users.findOne({ _id: result.insertedId });
+          }
+  
+          const token = jwt.sign({ id: user._id, email }, JWT_SECRET, {
+            expiresIn: "7d",
+          });
+  
+          res.status(200).json({ message: "User saved", token });
+        } catch (err) {
+          console.error("Save Google user error:", err);
+          res.status(500).json({ message: "Internal server error" });
+        }
+      });
+  
+      // Other routes and logic...
+    } catch (err) {
+      console.error("❌ Error connecting to MongoDB:", err);
+    }
+  }
