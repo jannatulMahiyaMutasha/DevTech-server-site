@@ -102,3 +102,27 @@ async function run() {
               .status(403)
               .json({ message: "You can only update your own tasks" });
           }
+
+          // Update task data in the database
+        await tasks.updateOne(
+          { _id: new ObjectId(taskId) },
+          {
+            $set: {
+              title,
+              category,
+              description,
+              deadline,
+              budget,
+            },
+          }
+        );
+
+        // Send a success response
+        res.status(200).json({ message: "Task updated successfully" });
+      } catch (error) {
+        console.error("Error updating task:", error);
+        res.status(500).json({ message: "Error updating task" });
+      }
+    });
+
+    
