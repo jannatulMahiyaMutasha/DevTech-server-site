@@ -222,3 +222,74 @@ async function run() {
         res.status(500).json({ message: "Error adding task" });
       }
     });
+
+
+     // GET all bids for a task
+     app.get("/api/bids/:taskId", async (req, res) => {
+      const { taskId } = req.params;
+
+      try {
+        const bids = await db
+          .collection("bids")
+          .find({ taskId: new ObjectId(taskId) })
+          .toArray();
+
+        res.status(200).json(bids); // Return the list of bids
+      } catch (err) {
+        console.error("Error fetching bids:", err);
+        res.status(500).json({ message: "Error fetching bids" });
+      }
+    });
+
+    app.post("/api/register", async (req, res) => {
+      const { name, email, password, photoURL } = req.body;
+
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z]).{6,}$/;
+      if (!passwordRegex.test(password)) {
+        return res.status(400).json({
+          message:
+            "Password must have an uppercase letter, a lowercase letter, and be at least 6 characters long.",
+        });
+      }
+
+      try {
+        const existingUser = await users.findOne({ email });
+        if (existingUser) {
+          return res.status(409).json({ message: "User already exists" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await users.insertOne({
+          name,
+          email,
+          password: hashedPassword,
+          photoURL: photoURL || "",
+          createdAt: new Date(),
+        });
+
+        const token = jwt.sign({ id: result.insertedId, email }, JWT_SECRET, {
+          expiresIn: "7d",
+        });
+
+        res
+          .status(201)
+          .json({ message: "User registered successfully", token });
+      } catch (err) {
+        res.status(500).json({ message: "Internal server error" });
+      }
+    });
+
+    app.post("/api/login", async (req, res) => {
+      const { email, password } = req.body;
+
+      try {
+        const user = await users.findOne({ email });
+        if (!user) {
+          return res.status(400).send("User not found");
+        }
+
+        // Verify password (assumes bcrypt is used)
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+          return res.status(400).send("Invalid credentials");
+        }
