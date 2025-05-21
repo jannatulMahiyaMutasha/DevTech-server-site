@@ -125,4 +125,28 @@ async function run() {
       }
     });
 
-    
+    app.delete("/api/tasks/:id", verifyToken, async (req, res) => {
+      const taskId = req.params.id;
+      const userEmail = req.user.email;
+
+      try {
+        const task = await tasks.findOne({ _id: new ObjectId(taskId) });
+        if (!task) {
+          return res.status(404).json({ message: "Task not found" });
+        }
+
+        // Ensure the user can only delete their own tasks
+        if (task.email !== userEmail) {
+          return res
+            .status(403)
+            .json({ message: "You can only delete your own tasks" });
+        }
+
+        await tasks.deleteOne({ _id: new ObjectId(taskId) });
+
+        res.status(200).json({ message: "Task deleted successfully" });
+      } catch (error) {
+        console.error("Error deleting task:", error);
+        res.status(500).json({ message: "Error deleting task" });
+      }
+    });
