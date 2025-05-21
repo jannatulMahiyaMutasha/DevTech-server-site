@@ -39,3 +39,66 @@ function verifyToken(req, res, next) {
     return res.status(401).send("Invalid token");
   }
 }
+
+async function run() {
+  try {
+    await client.connect();
+    console.log("✅ Connected to MongoDB");
+
+    const db = client.db("freelance-marketplace");
+    const users = db.collection("users");
+    const tasks = db.collection("tasks");
+    const bids = db.collection("bids");
+
+    app.get("/api/my-tasks", verifyToken, async (req, res) => {
+      try {
+        const userEmail = req.user.email;
+
+        // Fetch tasks based on user's email
+        const tasksList = await tasks.find({ email: userEmail }).toArray();
+
+        // Fetch the user details for each task
+        const tasksWithUserName = await Promise.all(
+          tasksList.map(async (task) => {
+            // Fetch user by email (or _id if using user ID)
+            const user = await users.findOne({ email: task.email });
+            return {
+              ...task,
+              name: user?.name || "", // Add the user name to the task data
+            };
+          })
+        );
+
+         // Send back the tasks with user names included
+         res.status(200).json(tasksWithUserName);
+        } catch (error) {
+          console.error("Error fetching user's tasks:", error);
+          res.status(500).json({ message: "Error fetching tasks" });
+        }
+      });
+  
+      app.put("/api/tasks/:id", verifyToken, async (req, res) => {
+        const { title, category, description, deadline, budget } = req.body;
+        const taskId = req.params.id;
+        const userEmail = req.user.email; // Email from token
+        const userName = req.user.name; // Name from token
+  
+        try {
+          // Check if the task exists
+          const task = await tasks.findOne({ _id: new ObjectId(taskId) });
+          if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+          }
+  
+          // Ensure the user is trying to update their own task
+          if (task.email !== userEmail) {
+            return res
+              .status(403)
+              .json({ message: "You can only update your own tasks" });
+          }
+  
+          if (task.name !== userName) {
+            return res
+              .status(403)
+              .json({ message: "You can only update your own tasks" });
+          }
