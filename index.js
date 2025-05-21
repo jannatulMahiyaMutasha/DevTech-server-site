@@ -339,3 +339,15 @@ async function run() {
       console.error("❌ Error connecting to MongoDB:", err);
     }
   }
+
+  run().catch(console.dir);
+
+// 🌐 Root route to check DB connection
+app.get("/", async (req, res) => {
+  try {
+    await client.db("admin").command({ ping: 1 });
+    res.send(" MongoDB is connected. Server is running on port " + port);
+  } catch (error) {
+    res.status(500).send(" MongoDB connection failed: " + error.message);
+  }
+});
