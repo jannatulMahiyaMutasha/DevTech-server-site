@@ -150,3 +150,75 @@ async function run() {
         res.status(500).json({ message: "Error deleting task" });
       }
     });
+
+
+    app.get("/api/bids/:taskId", verifyToken, async (req, res) => {
+      const { taskId } = req.params;
+      try {
+        const bids = await db
+          .collection("bids")
+          .aggregate([
+            {
+              $match: { taskId: new ObjectId(taskId) },
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "userEmail",
+                foreignField: "email",
+                as: "userDetails",
+              },
+            },
+            {
+              $unwind: "$userDetails",
+            },
+            {
+              $project: {
+                _id: 1,
+                userEmail: 1,
+                bidderName: "$userDetails.name",
+                amount: 1,
+                message: 1,
+              },
+            },
+          ])
+          .toArray();
+
+        // Count the number of bids for the task
+        const bidCount = bids.length;
+
+        if (bids.length === 0) {
+          return res
+            .status(404)
+            .json({ message: "No bids found for this task" });
+        }
+
+        res.status(200).json({
+          bids,
+          bidCount, // Include the bid count in the response
+        }); // Send the bids with bidder info and count in the response
+      } catch (error) {
+        console.error("Error fetching bids:", error);
+        res.status(500).json({ message: "Error fetching bids" });
+      }
+    });
+
+    app.post("/api/add-task", verifyToken, async (req, res) => {
+      const { title, category, description, deadline, budget } = req.body;
+      const user = req.user;
+
+      try {
+        const task = await tasks.insertOne({
+          title,
+          category,
+          description,
+          deadline,
+          budget,
+          email: user.email,
+          createdBy: user.name,
+        });
+        res.status(201).json({ message: "Task added successfully", task });
+      } catch (err) {
+        res.status(500).json({ message: "Error adding task" });
+      }
+    });
