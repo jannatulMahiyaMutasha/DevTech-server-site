@@ -7,7 +7,7 @@ const bcrypt = require("bcryptjs");
 const app = express();
 const port = 8800;
 
-const JWT_SECRET = "123456";
+const JWT_SECRET = "1234556";
 
 app.use(express.json());
 app.use(cors());
@@ -22,7 +22,6 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
-
 
 function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -42,9 +41,6 @@ function verifyToken(req, res, next) {
 
 async function run() {
   try {
-    await client.connect();
-    console.log("✅ Connected to MongoDB");
-
     const db = client.db("freelance-marketplace");
     const users = db.collection("users");
     const tasks = db.collection("tasks");
@@ -69,41 +65,41 @@ async function run() {
           })
         );
 
-         // Send back the tasks with user names included
-         res.status(200).json(tasksWithUserName);
-        } catch (error) {
-          console.error("Error fetching user's tasks:", error);
-          res.status(500).json({ message: "Error fetching tasks" });
-        }
-      });
-  
-      app.put("/api/tasks/:id", verifyToken, async (req, res) => {
-        const { title, category, description, deadline, budget } = req.body;
-        const taskId = req.params.id;
-        const userEmail = req.user.email; // Email from token
-        const userName = req.user.name; // Name from token
-  
-        try {
-          // Check if the task exists
-          const task = await tasks.findOne({ _id: new ObjectId(taskId) });
-          if (!task) {
-            return res.status(404).json({ message: "Task not found" });
-          }
-  
-          // Ensure the user is trying to update their own task
-          if (task.email !== userEmail) {
-            return res
-              .status(403)
-              .json({ message: "You can only update your own tasks" });
-          }
-  
-          if (task.name !== userName) {
-            return res
-              .status(403)
-              .json({ message: "You can only update your own tasks" });
-          }
+        // Send back the tasks with user names included
+        res.status(200).json(tasksWithUserName);
+      } catch (error) {
+        console.error("Error fetching user's tasks:", error);
+        res.status(500).json({ message: "Error fetching tasks" });
+      }
+    });
 
-          // Update task data in the database
+    app.put("/api/tasks/:id", verifyToken, async (req, res) => {
+      const { title, category, description, deadline, budget } = req.body;
+      const taskId = req.params.id;
+      const userEmail = req.user.email; // Email from token
+      const userName = req.user.name; // Name from token
+
+      try {
+        // Check if the task exists
+        const task = await tasks.findOne({ _id: new ObjectId(taskId) });
+        if (!task) {
+          return res.status(404).json({ message: "Task not found" });
+        }
+
+        // Ensure the user is trying to update their own task
+        if (task.email !== userEmail) {
+          return res
+            .status(403)
+            .json({ message: "You can only update your own tasks" });
+        }
+
+        if (task.name !== userName) {
+          return res
+            .status(403)
+            .json({ message: "You can only update your own tasks" });
+        }
+
+        // Update task data in the database
         await tasks.updateOne(
           { _id: new ObjectId(taskId) },
           {
@@ -150,7 +146,6 @@ async function run() {
         res.status(500).json({ message: "Error deleting task" });
       }
     });
-
 
     app.get("/api/bids/:taskId", verifyToken, async (req, res) => {
       const { taskId } = req.params;
@@ -204,7 +199,8 @@ async function run() {
     });
 
     app.post("/api/add-task", verifyToken, async (req, res) => {
-      const { title, category, description, deadline, budget } = req.body;
+      const { title, category, description, deadline, budget, image } =
+        req.body;
       const user = req.user;
 
       try {
@@ -214,6 +210,7 @@ async function run() {
           description,
           deadline,
           budget,
+          image,
           email: user.email,
           createdBy: user.name,
         });
@@ -223,9 +220,145 @@ async function run() {
       }
     });
 
+    // GET all tasks
+    app.get("/api/tasks", async (req, res) => {
+      try {
+        const db = client.db("freelance-marketplace");
+        const tasks = await db.collection("tasks").find().toArray();
+        res.status(200).json(tasks);
+      } catch (error) {
+        console.error("Error fetching tasks:", error);
+        res.status(500).json({ message: "Error fetching tasks" });
+      }
+    });
+    // GET top 6 tasks sorted by upcoming deadlines
+    app.get("/api/featured", async (req, res) => {
+      try {
+        const db = client.db("freelance-marketplace");
+        const tasks = await db
+          .collection("tasks")
+          .find()
+          .sort({ deadline: 1 }) // sort by soonest deadlines
+          .limit(6) // return only 6 tasks
+          .toArray();
 
-     // GET all bids for a task
-     app.get("/api/bids/:taskId", async (req, res) => {
+        res.status(200).json(tasks);
+      } catch (error) {
+        console.error("Error fetching tasks:", error);
+        res.status(500).json({ message: "Error fetching tasks" });
+      }
+    });
+
+    // GET popular tasks based on number of bids
+    app.get("/api/popular-tasks", async (req, res) => {
+      try {
+        const db = client.db("freelance-marketplace");
+
+        const popularTasks = await db
+          .collection("bids")
+          .aggregate([
+            {
+              $group: {
+                _id: "$taskId",
+                bidCount: { $sum: 1 },
+              },
+            },
+            {
+              $sort: { bidCount: -1 }, // sort by highest number of bids
+            },
+            {
+              $limit: 6, // top 6 most popular tasks
+            },
+            {
+              $lookup: {
+                from: "tasks",
+                localField: "_id",
+                foreignField: "_id",
+                as: "taskDetails",
+              },
+            },
+            {
+              $unwind: "$taskDetails",
+            },
+            {
+              $project: {
+                _id: "$taskDetails._id",
+                title: "$taskDetails.title",
+                image: "$taskDetails.image",
+                category: "$taskDetails.category",
+                description: "$taskDetails.description",
+                deadline: "$taskDetails.deadline",
+                budget: "$taskDetails.budget",
+                email: "$taskDetails.email",
+                createdBy: "$taskDetails.createdBy",
+                bidCount: 1,
+              },
+            },
+          ])
+          .toArray();
+
+        res.status(200).json(popularTasks);
+      } catch (error) {
+        console.error("Error fetching popular tasks:", error);
+        res.status(500).json({ message: "Error fetching popular tasks" });
+      }
+    });
+
+    // GET task by ID
+    app.get("/api/tasks/:id", async (req, res) => {
+      try {
+        const db = client.db("freelance-marketplace");
+        const task = await db
+          .collection("tasks")
+          .findOne({ _id: new ObjectId(req.params.id) });
+
+        if (!task) {
+          return res.status(404).json({ message: "Task not found" });
+        }
+
+        res.status(200).json(task);
+      } catch (error) {
+        console.error("Error fetching task by ID:", error);
+        res.status(500).json({ message: "Error fetching task details" });
+      }
+    });
+
+    // POST to place a bid on a task
+    app.post("/api/bids/:taskId", verifyToken, async (req, res) => {
+      const { taskId } = req.params;
+      const userEmail = req.user.email; // Get the user email from the JWT token
+
+      try {
+        // Check if the user has already placed a bid for this task
+        const existingBid = await db
+          .collection("bids")
+          .findOne({ taskId: new ObjectId(taskId), userEmail });
+
+        if (existingBid) {
+          return res
+            .status(400)
+            .json({ message: "You have already placed a bid" });
+        }
+
+        // Place a new bid
+        const result = await db.collection("bids").insertOne({
+          taskId: new ObjectId(taskId),
+          userEmail,
+          createdAt: new Date(),
+        });
+
+        res.status(201).json({
+          message: "Bid placed successfully",
+          bidId: result.insertedId,
+        });
+      } catch (err) {
+        console.error("Error placing bid:", err);
+        res.status(500).json({ message: "Error placing bid" });
+      }
+    });
+
+    // GET all bids for a task
+    app.get("/api/bids/:taskId", async (req, res) => {
       const { taskId } = req.params;
 
       try {
@@ -278,6 +411,18 @@ async function run() {
         res.status(500).json({ message: "Internal server error" });
       }
     });
+    app.get("/api/users", async (req, res) => {
+      try {
+        const result = await client
+          .db("freelance-marketplace")
+          .collection("users")
+          .find()
+          .toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Error fetching users" });
+      }
+    });
 
     app.post("/api/login", async (req, res) => {
       const { email, password } = req.body;
@@ -294,53 +439,53 @@ async function run() {
           return res.status(400).send("Invalid credentials");
         }
 
-          // Create JWT token
-          const token = jwt.sign(
-            { id: user._id, email: user.email },
-            JWT_SECRET,
-            { expiresIn: "1h" }
-          );
-  
-          res.json({ token, user });
-        } catch (err) {
-          res.status(500).send("Server error");
-        }
-      });
-  
-      app.post("/api/save-user", async (req, res) => {
-        const { name, email, photoURL } = req.body;
-  
-        try {
-          let user = await users.findOne({ email });
-  
-          if (!user) {
-            const result = await users.insertOne({
-              name,
-              email,
-              photoURL: photoURL || "",
-              createdAt: new Date(),
-            });
-            user = await users.findOne({ _id: result.insertedId });
-          }
-  
-          const token = jwt.sign({ id: user._id, email }, JWT_SECRET, {
-            expiresIn: "7d",
-          });
-  
-          res.status(200).json({ message: "User saved", token });
-        } catch (err) {
-          console.error("Save Google user error:", err);
-          res.status(500).json({ message: "Internal server error" });
-        }
-      });
-  
-      // Other routes and logic...
-    } catch (err) {
-      console.error("❌ Error connecting to MongoDB:", err);
-    }
-  }
+        // Create JWT token
+        const token = jwt.sign(
+          { id: user._id, email: user.email },
+          JWT_SECRET,
+          { expiresIn: "1h" }
+        );
 
-  run().catch(console.dir);
+        res.json({ token, user });
+      } catch (err) {
+        res.status(500).send("Server error");
+      }
+    });
+
+    app.post("/api/save-user", async (req, res) => {
+      const { name, email, photoURL } = req.body;
+
+      try {
+        let user = await users.findOne({ email });
+
+        if (!user) {
+          const result = await users.insertOne({
+            name,
+            email,
+            photoURL: photoURL || "",
+            createdAt: new Date(),
+          });
+          user = await users.findOne({ _id: result.insertedId });
+        }
+
+        const token = jwt.sign({ id: user._id, email }, JWT_SECRET, {
+          expiresIn: "7d",
+        });
+
+        res.status(200).json({ message: "User saved", token });
+      } catch (err) {
+        console.error("Save Google user error:", err);
+        res.status(500).json({ message: "Internal server error" });
+      }
+    });
+
+    // Other routes and logic...
+  } catch (err) {
+    console.error("❌ Error connecting to MongoDB:", err);
+  }
+}
+
+run().catch(console.dir);
 
 // 🌐 Root route to check DB connection
 app.get("/", async (req, res) => {
@@ -350,4 +495,9 @@ app.get("/", async (req, res) => {
   } catch (error) {
     res.status(500).send(" MongoDB connection failed: " + error.message);
   }
+});
+
+// 🚀 Start the server
+app.listen(port, () => {
+  console.log(`🚀 Server is running on http://localhost:${port}`);
 });
